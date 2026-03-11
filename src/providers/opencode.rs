@@ -1,10 +1,8 @@
-use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{info, debug, error};
 
-use crate::providers::ProviderAdapter;
 use crate::api::models::{ChatCompletionRequest, ChatCompletionResponse, Model, Message, Choice, Usage};
 use crate::utils::errors::{ProxyError, Result};
 
@@ -69,24 +67,27 @@ impl OpencodeProvider {
         Self { client, config }
     }
     
-    fn parse_model_id(&self, model: &str) -> (String, String) {
-        // Handle formats:
-        // - "opencode/anthropic/claude-3.5-sonnet" -> ("anthropic", "claude-3.5-sonnet")
-        // - "anthropic/claude-3.5-sonnet" -> ("anthropic", "claude-3.5-sonnet")
-        
-        let parts: Vec<&str> = model.split('/').collect();
-        
-        if parts.len() >= 3 && parts[0] == "opencode" {
-            (parts[1].to_string(), parts[2..].join("/"))
-        } else if parts.len() == 2 {
-            (parts[0].to_string(), parts[1].to_string())
-        } else {
-            // Fallback: assume it's just a model ID
-            ("anthropic".to_string(), model.to_string())
+    pub async fn is_available(&self) -> bool {
+        match self.health_check().await {
+            Ok(_) => true,
+            Err(_) => {
+                if self.config.auto_start {
+                    // Try to start opencode
+                    if let Err(e) = self.start_opencode().await {
+                        error!("Failed to auto-start opencode: {}", e);
+                        return false;
+                    }
+                    // Retry health check
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    self.health_check().await.is_ok()
+                } else {
+                    false
+                }
+            }
         }
     }
     
-    async fn opencode_get_models(&self) -> Result<Vec<Model>> {
+    pub async fn list_models(&self) -> Result<Vec<Model>> {
         // For now, return a static list of known opencode models
         // In production, this would query opencode's API
         let models = vec![
@@ -124,39 +125,8 @@ impl OpencodeProvider {
         
         Ok(models)
     }
-}
-
-#[async_trait]
-impl ProviderAdapter for OpencodeProvider {
-    fn name(&self) -> &'static str {
-        "opencode"
-    }
     
-    async fn is_available(&self) -> bool {
-        match self.health_check().await {
-            Ok(_) => true,
-            Err(_) => {
-                if self.config.auto_start {
-                    // Try to start opencode
-                    if let Err(e) = self.start_opencode().await {
-                        error!("Failed to auto-start opencode: {}", e);
-                        return false;
-                    }
-                    // Retry health check
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                    self.health_check().await.is_ok()
-                } else {
-                    false
-                }
-            }
-        }
-    }
-    
-    async fn list_models(&self) -> Result<Vec<Model>> {
-        self.opencode_get_models().await
-    }
-    
-    async fn create_session(&self) -> Result<String> {
+    pub async fn create_session(&self) -> Result<String> {
         let url = format!("{}/session", self.config.url);
         
         let request = OpencodeSessionRequest {
@@ -184,7 +154,7 @@ impl ProviderAdapter for OpencodeProvider {
         Ok(session.id)
     }
     
-    async fn chat_completion(
+    pub async fn chat_completion(
         &self,
         session_id: &str,
         request: &ChatCompletionRequest,
@@ -236,7 +206,7 @@ impl ProviderAdapter for OpencodeProvider {
             .collect::<Vec<_>>()
             .join("");
         
-        let reasoning = message.parts.iter()
+        let _reasoning = message.parts.iter()
             .filter_map(|part| match part {
                 OpencodeResponsePart::Reasoning { text } => Some(text.clone()),
                 _ => None,
@@ -249,6 +219,7 @@ impl ProviderAdapter for OpencodeProvider {
             message: Message {
                 role: "assistant".to_string(),
                 content: content.clone(),
+                name: None,
             },
             finish_reason: Some("stop".to_string()),
         };
@@ -267,12 +238,12 @@ impl ProviderAdapter for OpencodeProvider {
         })
     }
     
-    async fn close_session(&self, _session_id: &str) -> Result<()> {
+    pub async fn close_session(&self, _session_id: &str) -> Result<()> {
         // opencode sessions auto-cleanup, but we could explicitly close if needed
         Ok(())
     }
     
-    async fn health_check(&self) -> Result<()> {
+    pub async fn health_check(&self) -> Result<()> {
         let url = format!("{}/global/health", self.config.url);
         
         let response = self.client
@@ -287,9 +258,24 @@ impl ProviderAdapter for OpencodeProvider {
             Err(ProxyError::ProviderUnavailable(format!("Health check returned: {}", response.status())))
         }
     }
-}
-
-impl OpencodeProvider {
+    
+    fn parse_model_id(&self, model: &str) -> (String, String) {
+        // Handle formats:
+        // - "opencode/anthropic/claude-3.5-sonnet" -> ("anthropic", "claude-3.5-sonnet")
+        // - "anthropic/claude-3.5-sonnet" -> ("anthropic", "claude-3.5-sonnet")
+        
+        let parts: Vec<&str> = model.split('/').collect();
+        
+        if parts.len() >= 3 && parts[0] == "opencode" {
+            (parts[1].to_string(), parts[2..].join("/"))
+        } else if parts.len() == 2 {
+            (parts[0].to_string(), parts[1].to_string())
+        } else {
+            // Fallback: assume it's just a model ID
+            ("anthropic".to_string(), model.to_string())
+        }
+    }
+    
     async fn start_opencode(&self) -> Result<()> {
         use std::process::Command;
         

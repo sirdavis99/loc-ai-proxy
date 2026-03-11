@@ -5,7 +5,7 @@ use tracing::{info, error};
 
 use crate::config::{Config, ProviderSettings};
 use crate::api::create_router;
-use crate::providers::{ProviderRegistry, opencode::OpencodeProvider};
+use crate::providers::{ProviderRegistry, Provider, opencode::OpencodeProvider};
 use crate::session::SessionManager;
 use crate::utils::errors::ProxyError;
 
@@ -27,7 +27,7 @@ impl Server {
                 if let ProviderSettings::Opencode(settings) = &opencode_config.settings {
                     info!("Registering opencode provider");
                     let provider = OpencodeProvider::new(settings.clone());
-                    provider_registry.register(Box::new(provider));
+                    provider_registry.register(Provider::Opencode(provider));
                 }
             }
         }

@@ -45,6 +45,18 @@ pub struct OpencodeConfig {
     pub session_ttl_minutes: i64,
 }
 
+impl Default for OpencodeConfig {
+    fn default() -> Self {
+        Self {
+            url: "http://127.0.0.1:4096".to_string(),
+            auto_start: false,
+            timeout_seconds: default_timeout(),
+            health_check_interval_seconds: default_health_interval(),
+            session_ttl_minutes: default_session_ttl(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]

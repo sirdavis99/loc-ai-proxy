@@ -1,7 +1,7 @@
 [package]
 name = "loc-ai-proxy"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 authors = ["Davis <davis@example.com>"]
 description = "OpenAI-compatible proxy for local AI agents - unifying access to multiple providers"
 license = "MIT"
@@ -63,6 +63,7 @@ regex = "1.11"
 url = "2.5"
 which = "6.0"
 tempfile = "3.13"
+async-trait = "0.1.89"
 
 [dev-dependencies]
 tokio-test = "0.4"

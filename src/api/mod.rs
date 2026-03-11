@@ -4,15 +4,14 @@ use axum::{
     routing::{get, post},
     Router,
     Json,
-    extract::{State, Extension},
-    http::StatusCode,
+    extract::Extension,
 };
 use std::sync::Arc;
 use tracing::{info, debug, error};
 
 use crate::api::models::{
     ChatCompletionRequest, ChatCompletionResponse, 
-    ModelsResponse, HealthResponse, Model
+    ModelsResponse, HealthResponse
 };
 use crate::session::SessionManager;
 use crate::providers::ProviderRegistry;

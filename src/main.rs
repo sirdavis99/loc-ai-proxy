@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use tracing::{info, warn, error};
+use tracing::{info, error};
 use std::process;
 
 mod api;
@@ -18,34 +18,34 @@ use crate::server::Server;
 #[command(name = "locaiproxy")]
 #[command(about = "OpenAI-compatible proxy for local AI agents")]
 #[command(version)]
-struct Cli {
+pub struct Cli {
     #[command(subcommand)]
-    command: Option<Commands>,
+    pub command: Option<Commands>,
     
     /// Port to listen on
     #[arg(short, long, env = "LOC_AI_PROXY_PORT", default_value = "9110")]
-    port: u16,
+    pub port: u16,
     
     /// Host to bind to
     #[arg(short = 'H', long, env = "LOC_AI_PROXY_HOST", default_value = "127.0.0.1")]
-    host: String,
+    pub host: String,
     
     /// Configuration file path
     #[arg(short, long, env = "LOC_AI_PROXY_CONFIG")]
-    config: Option<String>,
+    pub config: Option<String>,
     
     /// Enable debug logging
     #[arg(short, long)]
-    debug: bool,
+    pub debug: bool,
 }
 
 #[derive(Subcommand)]
-enum Commands {
+pub enum Commands {
     /// Configure a provider
     Configure {
         /// Provider to configure
         #[arg(value_enum)]
-        provider: ProviderChoice,
+        provider: cli::ProviderChoice,
     },
     /// Show status of all providers
     Status,
@@ -53,11 +53,6 @@ enum Commands {
     ListModels,
     /// Run diagnostics
     Doctor,
-}
-
-#[derive(Clone, Debug, clap::ValueEnum)]
-enum ProviderChoice {
-    Opencode,
 }
 
 #[tokio::main]

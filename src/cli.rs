@@ -1,13 +1,17 @@
-use crate::Cli;
-use tracing::{info, error};
+use tracing::error;
 use crate::config::Config;
 
-pub async fn configure_provider(provider: crate::ProviderChoice) {
-    use dialoguer::{Select, Input, Confirm};
+#[derive(Clone, Debug, clap::ValueEnum)]
+pub enum ProviderChoice {
+    Opencode,
+}
+
+pub async fn configure_provider(provider: ProviderChoice) {
+    use dialoguer::{Input, Confirm};
     use console::style;
     
     match provider {
-        crate::ProviderChoice::Opencode => {
+        ProviderChoice::Opencode => {
             println!("{}", style("Configuring opencode provider").bold().green());
             
             // Auto-detect opencode
@@ -146,14 +150,13 @@ pub async fn show_status() {
         let status = if provider.enabled {
             match name.as_str() {
                 "opencode" => {
-                    if let crate::config::ProviderSettings::Opencode(cfg) = &provider.settings {
-                        if test_opencode_connection(&cfg.url).await {
-                            style("✓ Connected").green()
-                        } else {
-                            style("✗ Not connected").red()
-                        }
+                    let cfg = match &provider.settings {
+                        crate::config::ProviderSettings::Opencode(c) => c,
+                    };
+                    if test_opencode_connection(&cfg.url).await {
+                        style("✓ Connected").green()
                     } else {
-                        style("✗ Invalid config").red()
+                        style("✗ Not connected").red()
                     }
                 }
                 _ => style("? Unknown").yellow(),

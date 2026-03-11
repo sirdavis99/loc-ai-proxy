@@ -1,39 +1,63 @@
-use async_trait::async_trait;
-use crate::utils::errors::{ProxyError, Result};
 use crate::api::models::{ChatCompletionRequest, ChatCompletionResponse, Model};
+use crate::utils::errors::Result;
+use crate::providers::opencode::OpencodeProvider;
 
 pub mod opencode;
 
-#[async_trait]
-pub trait ProviderAdapter: Send + Sync {
-    /// Provider name
-    fn name(&self) -> &'static str;
+pub struct ProviderRegistry {
+    providers: Vec<Provider>,
+}
+
+pub enum Provider {
+    Opencode(OpencodeProvider),
+}
+
+impl Provider {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Provider::Opencode(_) => "opencode",
+        }
+    }
     
-    /// Check if provider is available
-    async fn is_available(&self) -> bool;
+    pub async fn is_available(&self) -> bool {
+        match self {
+            Provider::Opencode(p) => p.is_available().await,
+        }
+    }
     
-    /// List available models
-    async fn list_models(&self) -> Result<Vec<Model>>;
+    pub async fn list_models(&self) -> Result<Vec<Model>> {
+        match self {
+            Provider::Opencode(p) => p.list_models().await,
+        }
+    }
     
-    /// Create a new session
-    async fn create_session(&self) -> Result<String>;
+    pub async fn create_session(&self) -> Result<String> {
+        match self {
+            Provider::Opencode(p) => p.create_session().await,
+        }
+    }
     
-    /// Send a chat completion request
-    async fn chat_completion(
+    pub async fn chat_completion(
         &self,
         session_id: &str,
         request: &ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse>;
+    ) -> Result<ChatCompletionResponse> {
+        match self {
+            Provider::Opencode(p) => p.chat_completion(session_id, request).await,
+        }
+    }
     
-    /// Close a session
-    async fn close_session(&self, session_id: &str) -> Result<()>;
+    pub async fn close_session(&self, session_id: &str) -> Result<()> {
+        match self {
+            Provider::Opencode(p) => p.close_session(session_id).await,
+        }
+    }
     
-    /// Health check
-    async fn health_check(&self) -> Result<()>;
-}
-
-pub struct ProviderRegistry {
-    providers: Vec<Box<dyn ProviderAdapter>>,
+    pub async fn health_check(&self) -> Result<()> {
+        match self {
+            Provider::Opencode(p) => p.health_check().await,
+        }
+    }
 }
 
 impl ProviderRegistry {
@@ -43,14 +67,14 @@ impl ProviderRegistry {
         }
     }
     
-    pub fn register(&mut self, provider: Box<dyn ProviderAdapter>) {
+    pub fn register(&mut self, provider: Provider) {
         self.providers.push(provider);
     }
     
-    pub async fn get_provider(&self, name: &str) -> Option<&dyn ProviderAdapter> {
+    pub async fn get_provider(&self, name: &str) -> Option<&Provider> {
         for provider in &self.providers {
             if provider.name() == name {
-                return Some(provider.as_ref());
+                return Some(provider);
             }
         }
         None
