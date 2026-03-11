@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  loc-ai-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "9110:9110"
+    environment:
+      - RUST_LOG=info
+      - LOC_AI_PROXY_HOST=0.0.0.0
+      - LOC_AI_PROXY_PORT=9110
+      - OPENCODE_URL=http://host.docker.internal:4096
+      - OPENCODE_AUTO_START=false
+    volumes:
+      # Mount config directory for persistent settings
+      - ./config:/root/.config/loc-ai-proxy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9110/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Include opencode if you want to run it in Docker too
+  # Note: This is more complex as opencode needs access to your shell, git, etc.
+  # opencode:
+  #   image: opencode-ai/opencode:latest
+  #   volumes:
+  #     - .:/workspace
+  #   environment:
+  #     - OPENCODE_API_KEY=${OPENCODE_API_KEY}

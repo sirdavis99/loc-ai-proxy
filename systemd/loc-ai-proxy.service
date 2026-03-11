@@ -1,0 +1,14 @@
+[Unit]
+Description=Loc AI Proxy - OpenAI-compatible proxy for local AI agents
+After=network.target
+
+[Service]
+Type=simple
+User=%I
+ExecStart=/usr/local/bin/locaiproxy
+Restart=always
+RestartSec=5
+Environment="RUST_LOG=info"
+
+[Install]
+WantedBy=multi-user.target
