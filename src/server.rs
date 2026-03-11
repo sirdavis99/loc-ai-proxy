@@ -1,11 +1,13 @@
 use axum::Router;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tracing::{info, error};
+use tracing::{error, info};
 
-use crate::config::{Config, ProviderSettings};
 use crate::api::create_router;
-use crate::providers::{ProviderRegistry, Provider, opencode::OpencodeProvider, anthropic::AnthropicProvider};
+use crate::config::{Config, ProviderSettings};
+use crate::providers::{
+    anthropic::AnthropicProvider, opencode::OpencodeProvider, Provider, ProviderRegistry,
+};
 use crate::session::SessionManager;
 use crate::utils::errors::ProxyError;
 
@@ -42,15 +44,15 @@ impl Server {
                 }
             }
         }
-        
+
         let provider_registry = Arc::new(provider_registry);
-        
+
         // Initialize session manager (30 minute TTL)
         let session_manager = Arc::new(SessionManager::new(30));
-        
+
         // Create router
         let router = create_router(session_manager, provider_registry);
-        
+
         Ok(Self {
             config,
             host,
@@ -58,22 +60,21 @@ impl Server {
             router,
         })
     }
-    
+
     pub async fn run(self) -> anyhow::Result<()> {
         let addr = format!("{}:{}", self.host, self.port);
-        let listener = TcpListener::bind(&addr).await
-            .map_err(|e| {
-                error!("Failed to bind to {}: {}", addr, e);
-                ProxyError::Internal(format!("Failed to bind: {}", e))
-            })?;
-        
+        let listener = TcpListener::bind(&addr).await.map_err(|e| {
+            error!("Failed to bind to {}: {}", addr, e);
+            ProxyError::Internal(format!("Failed to bind: {}", e))
+        })?;
+
         info!("🚀 Server running at http://{}", addr);
         info!("Health check: http://{}/health", addr);
-        
+
         axum::serve(listener, self.router)
             .await
             .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
-        
+
         Ok(())
     }
 }

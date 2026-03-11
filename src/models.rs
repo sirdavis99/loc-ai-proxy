@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use lazy_static::lazy_static;
+use std::collections::HashMap;
 
 lazy_static! {
     static ref MODEL_ALIASES: HashMap<&'static str, &'static str> = {
@@ -60,9 +60,6 @@ mod tests {
 
     #[test]
     fn test_non_alias_returns_original() {
-        assert_eq!(
-            resolve_model_alias("custom/model"),
-            "custom/model"
-        );
+        assert_eq!(resolve_model_alias("custom/model"), "custom/model");
     }
 }

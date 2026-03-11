@@ -1,8 +1,8 @@
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use anyhow::{Result, Context};
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -54,7 +54,7 @@ pub enum ProviderSettings {
 pub struct OpencodeConfig {
     pub url: String,
     #[serde(default)]
-pub auto_start: bool,
+    pub auto_start: bool,
     #[serde(default = "default_timeout")]
     pub timeout_seconds: u64,
     #[serde(default = "default_health_interval")]
@@ -188,41 +188,41 @@ impl Config {
             debug!("Loading config from: {}", p);
             return Self::load_from_file(p).await;
         }
-        
+
         // Try standard locations
         let config_paths = vec![
             dirs::config_dir().map(|d| d.join("loc-ai-proxy/config.yaml")),
             dirs::home_dir().map(|d| d.join(".config/loc-ai-proxy/config.yaml")),
             Some(PathBuf::from("./config.yaml")),
         ];
-        
+
         for path in config_paths.into_iter().flatten() {
             if path.exists() {
                 debug!("Found config at: {}", path.display());
                 return Self::load_from_file(&path.to_string_lossy()).await;
             }
         }
-        
+
         // Return default config
         info!("No config file found, using defaults");
         Ok(Config::default())
     }
-    
+
     async fn load_from_file(path: &str) -> Result<Self> {
         let content = tokio::fs::read_to_string(path)
             .await
             .with_context(|| format!("Failed to read config file: {}", path))?;
-        
+
         let mut config: Config = serde_yaml::from_str(&content)
             .with_context(|| format!("Failed to parse config file: {}", path))?;
-        
+
         // Auto-detect opencode auth if not configured
         config.auto_detect_auth();
-        
+
         info!("Loaded configuration from: {}", path);
         Ok(config)
     }
-    
+
     /// Auto-detect authentication for providers
     fn auto_detect_auth(&mut self) {
         if let Some(provider_config) = self.providers.get_mut("opencode") {
@@ -236,39 +236,38 @@ impl Config {
             }
         }
     }
-    
+
     /// Try to detect opencode authentication from environment
     fn detect_opencode_auth() -> Option<OpencodeAuth> {
         use std::env;
-        
+
         // Check environment variables
         let username = env::var("OPENCODE_SERVER_USERNAME").ok()?;
         let password = env::var("OPENCODE_SERVER_PASSWORD").ok()?;
-        
-        Some(OpencodeAuth {
-            username,
-            password,
-        })
+
+        Some(OpencodeAuth { username, password })
     }
-    
+
     pub async fn save(&self, path: Option<&str>) -> Result<()> {
-        let path = path.map(PathBuf::from)
+        let path = path
+            .map(PathBuf::from)
             .or_else(|| dirs::config_dir().map(|d| d.join("loc-ai-proxy/config.yaml")))
             .or_else(|| dirs::home_dir().map(|d| d.join(".config/loc-ai-proxy/config.yaml")))
             .context("Could not determine config directory")?;
-        
+
         // Ensure directory exists
         if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await
-                .with_context(|| format!("Failed to create config directory: {}", parent.display()))?;
+            tokio::fs::create_dir_all(parent).await.with_context(|| {
+                format!("Failed to create config directory: {}", parent.display())
+            })?;
         }
-        
-        let content = serde_yaml::to_string(self)
-            .context("Failed to serialize config")?;
-        
-        tokio::fs::write(&path, content).await
+
+        let content = serde_yaml::to_string(self).context("Failed to serialize config")?;
+
+        tokio::fs::write(&path, content)
+            .await
             .with_context(|| format!("Failed to write config file: {}", path.display()))?;
-        
+
         info!("Saved configuration to: {}", path.display());
         Ok(())
     }
@@ -278,25 +277,30 @@ impl Config {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    
+
     #[tokio::test]
     async fn test_load_default_config() {
         let config = Config::load(None).await.unwrap();
         assert_eq!(config.server.port, 9110);
         assert_eq!(config.server.host, "127.0.0.1");
     }
-    
+
     #[tokio::test]
     async fn test_save_and_load_config() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("test_config.yaml");
-        
+
         let mut config = Config::default();
         config.server.port = 9999;
-        
-        config.save(Some(config_path.to_str().unwrap())).await.unwrap();
-        
-        let loaded = Config::load(Some(config_path.to_str().unwrap())).await.unwrap();
+
+        config
+            .save(Some(config_path.to_str().unwrap()))
+            .await
+            .unwrap();
+
+        let loaded = Config::load(Some(config_path.to_str().unwrap()))
+            .await
+            .unwrap();
         assert_eq!(loaded.server.port, 9999);
     }
 }

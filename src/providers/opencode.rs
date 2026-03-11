@@ -1,12 +1,14 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
-use tracing::{info, debug, error, warn};
+use tracing::{debug, error, info, warn};
 
-use crate::api::models::{ChatCompletionRequest, ChatCompletionResponse, Model, Message, Choice, Usage};
+use crate::api::models::{
+    ChatCompletionRequest, ChatCompletionResponse, Choice, Message, Model, Usage,
+};
 use crate::utils::errors::{ProxyError, Result};
 
 pub struct OpencodeProvider {
@@ -72,25 +74,25 @@ impl OpencodeProvider {
             .timeout(Duration::from_secs(config.timeout_seconds))
             .build()
             .expect("Failed to build HTTP client");
-        
+
         // Try to auto-detect auth if not configured
         if config.auth.is_none() {
             config.auth = Self::detect_auth_from_env();
         }
-        
+
         Self { client, config }
     }
-    
+
     /// Try to detect opencode authentication from environment
     fn detect_auth_from_env() -> Option<crate::config::OpencodeAuth> {
         use std::env;
-        
+
         let username = env::var("OPENCODE_SERVER_USERNAME").ok()?;
         let password = env::var("OPENCODE_SERVER_PASSWORD").ok()?;
-        
+
         Some(crate::config::OpencodeAuth { username, password })
     }
-    
+
     /// Get authentication credentials or return error
     fn get_auth(&self) -> Result<&crate::config::OpencodeAuth> {
         self.config.auth.as_ref().ok_or_else(|| {
@@ -98,19 +100,25 @@ impl OpencodeProvider {
                 "Authentication not configured. \
                 Set OPENCODE_SERVER_USERNAME and OPENCODE_SERVER_PASSWORD environment variables, \
                 or configure auth in the config file. \
-                You can also use CLI mode which handles auth automatically.".to_string()
+                You can also use CLI mode which handles auth automatically."
+                    .to_string(),
             )
         })
     }
-    
+
     /// Create authenticated request builder
-    fn auth_request(&self, method: reqwest::Method, url: String) -> Result<reqwest::RequestBuilder> {
+    fn auth_request(
+        &self,
+        method: reqwest::Method,
+        url: String,
+    ) -> Result<reqwest::RequestBuilder> {
         let auth = self.get_auth()?;
-        Ok(self.client
+        Ok(self
+            .client
             .request(method, url)
             .basic_auth(&auth.username, Some(&auth.password)))
     }
-    
+
     pub async fn is_available(&self) -> bool {
         match self.health_check().await {
             Ok(_) => true,
@@ -130,7 +138,7 @@ impl OpencodeProvider {
             }
         }
     }
-    
+
     pub async fn list_models(&self) -> Result<Vec<Model>> {
         // For now, return a static list of known opencode models
         // In production, this would query opencode's API
@@ -166,23 +174,24 @@ impl OpencodeProvider {
                 owned_by: "deepseek".to_string(),
             },
         ];
-        
+
         Ok(models)
     }
-    
+
     pub async fn create_session(&self) -> Result<String> {
         let url = format!("{}/session", self.config.url);
-        
+
         let request = OpencodeSessionRequest {
             title: "loc-ai-proxy session".to_string(),
         };
-        
-        let response = self.auth_request(reqwest::Method::POST, url)?
+
+        let response = self
+            .auth_request(reqwest::Method::POST, url)?
             .json(&request)
             .send()
             .await
             .map_err(|e| ProxyError::ProviderError(format!("Failed to create session: {}", e)))?;
-        
+
         if !response.status().is_success() {
             let status = response.status();
             if status == reqwest::StatusCode::UNAUTHORIZED {
@@ -191,18 +200,20 @@ impl OpencodeProvider {
                 ));
             }
             let text = response.text().await.unwrap_or_default();
-            return Err(ProxyError::ProviderError(format!("Failed to create session: HTTP {} - {}", status, text)));
+            return Err(ProxyError::ProviderError(format!(
+                "Failed to create session: HTTP {} - {}",
+                status, text
+            )));
         }
-        
-        let session: OpencodeSessionResponse = response
-            .json()
-            .await
-            .map_err(|e| ProxyError::ProviderError(format!("Failed to parse session response: {}", e)))?;
-        
+
+        let session: OpencodeSessionResponse = response.json().await.map_err(|e| {
+            ProxyError::ProviderError(format!("Failed to parse session response: {}", e))
+        })?;
+
         debug!("Created opencode session: {}", session.id);
         Ok(session.id)
     }
-    
+
     pub async fn chat_completion(
         &self,
         _session_id: &str,
@@ -211,57 +222,75 @@ impl OpencodeProvider {
         // Use HTTP-based approach (more reliable for programmatic access)
         self.chat_completion_http(request).await
     }
-    
+
     /// CLI-based chat completion using opencode run command
     /// More reliable than HTTP API as it handles auth, sessions, and model routing automatically
-    async fn chat_completion_cli(&self, request: &ChatCompletionRequest) -> Result<ChatCompletionResponse> {
+    async fn chat_completion_cli(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> Result<ChatCompletionResponse> {
         let start_time = std::time::Instant::now();
         let max_duration = Duration::from_secs(60); // 60 second timeout
-        
+
         // Extract the last message content
-        let last_message = request.messages.last()
+        let last_message = request
+            .messages
+            .last()
             .ok_or_else(|| ProxyError::InvalidRequest("No messages provided".to_string()))?;
-        
+
         // Parse model ID for CLI
         let model_arg = if request.model.starts_with("opencode/") {
             // Remove the "opencode/" prefix
-            request.model.strip_prefix("opencode/").unwrap_or(&request.model).to_string()
+            request
+                .model
+                .strip_prefix("opencode/")
+                .unwrap_or(&request.model)
+                .to_string()
         } else {
             request.model.clone()
         };
-        
+
         debug!("Starting CLI chat completion with model: {}", model_arg);
-        debug!("Prompt: {}...", &last_message.content.chars().take(100).collect::<String>());
-        
+        debug!(
+            "Prompt: {}...",
+            &last_message.content.chars().take(100).collect::<String>()
+        );
+
         // Build environment variables for CLI
         let mut env_vars = std::collections::HashMap::new();
-        
+
         // Pass through authentication if available
         if let Some(auth) = &self.config.auth {
-            env_vars.insert("OPENCODE_SERVER_USERNAME".to_string(), auth.username.clone());
-            env_vars.insert("OPENCODE_SERVER_PASSWORD".to_string(), auth.password.clone());
+            env_vars.insert(
+                "OPENCODE_SERVER_USERNAME".to_string(),
+                auth.username.clone(),
+            );
+            env_vars.insert(
+                "OPENCODE_SERVER_PASSWORD".to_string(),
+                auth.password.clone(),
+            );
         }
-        
+
         // Set server URL
         env_vars.insert("OPENCODE_SERVER_URL".to_string(), self.config.url.clone());
-        
+
         // Build the CLI command
         // Using 'opencode run' with message as positional argument
         let mut cmd = Command::new("opencode");
         cmd.arg("run")
-           .arg("--model")
-           .arg(&model_arg)
-           .arg("--format")
-           .arg("json")
-           .arg(&last_message.content)  // Pass message as positional argument
-           .stdout(Stdio::piped())
-           .stderr(Stdio::piped());
-        
+            .arg("--model")
+            .arg(&model_arg)
+            .arg("--format")
+            .arg("json")
+            .arg(&last_message.content) // Pass message as positional argument
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
         // Apply environment variables
         cmd.envs(&env_vars);
-        
+
         debug!("Spawning opencode CLI command");
-        
+
         // Spawn the process with timeout
         let result = timeout(max_duration, async {
             let child = cmd.spawn().map_err(|e| {
@@ -274,15 +303,15 @@ impl OpencodeProvider {
                     ProxyError::ProviderError(format!("Failed to spawn opencode CLI: {}", e))
                 }
             })?;
-            
+
             // Wait for the process with a timeout
             let output = child.wait_with_output().await.map_err(|e| {
                 ProxyError::ProviderError(format!("Failed to read opencode output: {}", e))
             })?;
-            
+
             Ok(output)
         }).await;
-        
+
         let output = match result {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => return Err(e),
@@ -290,14 +319,14 @@ impl OpencodeProvider {
                 return Err(ProxyError::Timeout);
             }
         };
-        
+
         // Check if the process succeeded
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let exit_code = output.status.code().unwrap_or(-1);
-            
+
             error!("opencode CLI exited with code {}: {}", exit_code, stderr);
-            
+
             return Err(ProxyError::ProviderError(format!(
                 "opencode CLI failed (exit code {}): {}. \
                 This usually means the model '{}' is not available or the server is not running. \
@@ -305,17 +334,17 @@ impl OpencodeProvider {
                 exit_code, stderr, model_arg, model_arg
             )));
         }
-        
+
         // Parse the stdout
         let stdout = String::from_utf8_lossy(&output.stdout);
         let content = self.extract_content_from_cli_output(&stdout);
-        
+
         let elapsed = start_time.elapsed();
         debug!("CLI chat completion completed in {:?}", elapsed);
-        
+
         // Generate a unique ID for this completion
         let completion_id = format!("chatcmpl-{}-opencode-cli", chrono::Utc::now().timestamp());
-        
+
         let choice = Choice {
             index: 0,
             message: Message {
@@ -325,7 +354,7 @@ impl OpencodeProvider {
             },
             finish_reason: Some("stop".to_string()),
         };
-        
+
         Ok(ChatCompletionResponse {
             id: completion_id,
             object: "chat.completion".to_string(),
@@ -339,11 +368,11 @@ impl OpencodeProvider {
             },
         })
     }
-    
+
     /// Extract content from CLI output (handles both JSON and plain text)
     fn extract_content_from_cli_output(&self, output: &str) -> String {
         let trimmed = output.trim();
-        
+
         // Try to parse as JSON first
         if trimmed.starts_with('{') {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
@@ -365,13 +394,16 @@ impl OpencodeProvider {
                 }
             }
         }
-        
+
         // Fallback: return the raw output (strip any JSON formatting if present)
         trimmed.to_string()
     }
-    
+
     /// HTTP-based chat completion with polling (fallback method)
-    async fn chat_completion_http(&self, request: &ChatCompletionRequest) -> Result<ChatCompletionResponse> {
+    async fn chat_completion_http(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> Result<ChatCompletionResponse> {
         // Create a session first
         let session_id = self.create_session().await.map_err(|e| {
             ProxyError::ProviderError(format!(
@@ -381,16 +413,18 @@ impl OpencodeProvider {
                 e, self.config.url
             ))
         })?;
-        
+
         // Send the prompt using prompt_async endpoint (returns 204 No Content)
         let prompt_url = format!("{}/session/{}/prompt_async", self.config.url, session_id);
-        
+
         // Convert messages to opencode parts
-        let last_message = request.messages.last()
+        let last_message = request
+            .messages
+            .last()
             .ok_or_else(|| ProxyError::InvalidRequest("No messages provided".to_string()))?;
-        
+
         let (provider_id, model_id) = self.parse_model_id(&request.model);
-        
+
         let opencode_request = OpencodePromptRequest {
             parts: vec![OpencodePart::Text {
                 text: last_message.content.clone(),
@@ -400,90 +434,104 @@ impl OpencodeProvider {
                 model_id,
             }),
         };
-        
-        debug!("Sending async request to opencode HTTP API: {:?}", opencode_request);
-        
-        let response = self.auth_request(reqwest::Method::POST, prompt_url)?
+
+        debug!(
+            "Sending async request to opencode HTTP API: {:?}",
+            opencode_request
+        );
+
+        let response = self
+            .auth_request(reqwest::Method::POST, prompt_url)?
             .json(&opencode_request)
             .send()
             .await
-            .map_err(|e| ProxyError::ProviderError(format!(
-                "Failed to send prompt to HTTP API: {}. \
+            .map_err(|e| {
+                ProxyError::ProviderError(format!(
+                    "Failed to send prompt to HTTP API: {}. \
                 The opencode server at {} may be unreachable. \
                 Check if the server is running with 'curl {}/global/health'.",
-                e, self.config.url, self.config.url
-            )))?;
-        
+                    e, self.config.url, self.config.url
+                ))
+            })?;
+
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
-            return Err(ProxyError::ProviderError(
-                format!("Failed to send prompt: HTTP {} - {}. \
+            return Err(ProxyError::ProviderError(format!(
+                "Failed to send prompt: HTTP {} - {}. \
                 This usually indicates an authentication issue or invalid model selection.",
-                status, text)
-            ));
+                status, text
+            )));
         }
-        
+
         // Poll the message endpoint to get the assistant response
         let message_url = format!("{}/session/{}/message", self.config.url, session_id);
         let start_time = std::time::Instant::now();
         let max_duration = Duration::from_secs(30);
         let poll_interval = Duration::from_millis(500);
-        
+
         let assistant_message = loop {
             // Check timeout
             if start_time.elapsed() > max_duration {
                 return Err(ProxyError::Timeout);
             }
-            
+
             // Poll the message endpoint
-            let response = self.auth_request(reqwest::Method::GET, message_url.clone())?
+            let response = self
+                .auth_request(reqwest::Method::GET, message_url.clone())?
                 .send()
                 .await
-                .map_err(|e| ProxyError::ProviderError(format!("Failed to poll messages: {}", e)))?;
-            
+                .map_err(|e| {
+                    ProxyError::ProviderError(format!("Failed to poll messages: {}", e))
+                })?;
+
             if !response.status().is_success() {
                 let status = response.status();
                 let text = response.text().await.unwrap_or_default();
-                return Err(ProxyError::ProviderError(
-                    format!("Failed to poll messages: HTTP {} - {}", status, text)
-                ));
+                return Err(ProxyError::ProviderError(format!(
+                    "Failed to poll messages: HTTP {} - {}",
+                    status, text
+                )));
             }
-            
+
             // Parse message history
-            let messages: Vec<OpencodeMessageHistoryResponse> = response
-                .json()
-                .await
-                .map_err(|e| ProxyError::ProviderError(format!("Failed to parse message history: {}", e)))?;
-            
+            let messages: Vec<OpencodeMessageHistoryResponse> =
+                response.json().await.map_err(|e| {
+                    ProxyError::ProviderError(format!("Failed to parse message history: {}", e))
+                })?;
+
             debug!("Polled {} messages from HTTP API", messages.len());
-            
+
             // Find the latest assistant message with content
-            if let Some(assistant_msg) = messages.iter().rev().find(|m| {
-                m.info.role == "assistant" && !m.parts.is_empty()
-            }) {
+            if let Some(assistant_msg) = messages
+                .iter()
+                .rev()
+                .find(|m| m.info.role == "assistant" && !m.parts.is_empty())
+            {
                 break assistant_msg.clone();
             }
-            
+
             // Wait before polling again
             tokio::time::sleep(poll_interval).await;
         };
-        
+
         // Extract text content from assistant response
-        let content = assistant_message.parts.iter()
+        let content = assistant_message
+            .parts
+            .iter()
             .filter_map(|part| match part {
                 OpencodeResponsePart::Text { text } => Some(text.clone()),
                 _ => None,
             })
             .collect::<Vec<_>>()
             .join("");
-        
+
         // Clean up the session
         let _ = self.close_session(&session_id).await;
-        
+
         // Generate a unique ID for this completion
         let completion_id = format!("chatcmpl-{}-opencode-http", chrono::Utc::now().timestamp());
-        
+
         let choice = Choice {
             index: 0,
             message: Message {
@@ -493,7 +541,7 @@ impl OpencodeProvider {
             },
             finish_reason: Some("stop".to_string()),
         };
-        
+
         Ok(ChatCompletionResponse {
             id: completion_id,
             object: "chat.completion".to_string(),
@@ -507,15 +555,15 @@ impl OpencodeProvider {
             },
         })
     }
-    
+
     pub async fn close_session(&self, _session_id: &str) -> Result<()> {
         // opencode sessions auto-cleanup, but we could explicitly close if needed
         Ok(())
     }
-    
+
     pub async fn health_check(&self) -> Result<()> {
         let url = format!("{}/global/health", self.config.url);
-        
+
         // If auth is configured, use it; otherwise try without auth (for older opencode versions)
         let response = if let Some(auth) = &self.config.auth {
             self.client
@@ -526,10 +574,10 @@ impl OpencodeProvider {
         } else {
             self.client.get(&url).send().await
         };
-        
+
         let response = response
             .map_err(|e| ProxyError::ProviderUnavailable(format!("Health check failed: {}", e)))?;
-        
+
         match response.status() {
             status if status.is_success() => Ok(()),
             reqwest::StatusCode::UNAUTHORIZED => {
@@ -542,14 +590,14 @@ impl OpencodeProvider {
             )))
         }
     }
-    
+
     fn parse_model_id(&self, model: &str) -> (String, String) {
         // Handle formats:
         // - "opencode/anthropic/claude-3.5-sonnet" -> ("anthropic", "claude-3.5-sonnet")
         // - "anthropic/claude-3.5-sonnet" -> ("anthropic", "claude-3.5-sonnet")
-        
+
         let parts: Vec<&str> = model.split('/').collect();
-        
+
         if parts.len() >= 3 && parts[0] == "opencode" {
             (parts[1].to_string(), parts[2..].join("/"))
         } else if parts.len() == 2 {
@@ -559,20 +607,20 @@ impl OpencodeProvider {
             ("anthropic".to_string(), model.to_string())
         }
     }
-    
+
     async fn start_opencode(&self) -> Result<()> {
         use std::process::Command;
-        
+
         info!("Auto-starting opencode...");
-        
+
         let _child = Command::new("opencode")
             .args(["serve"])
             .spawn()
             .map_err(|e| ProxyError::ProviderError(format!("Failed to start opencode: {}", e)))?;
-        
+
         // We intentionally don't wait for the child process
         // It will run independently
-        
+
         Ok(())
     }
 }

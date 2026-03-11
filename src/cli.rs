@@ -1,5 +1,5 @@
-use tracing::error;
 use crate::config::Config;
+use tracing::error;
 
 #[derive(Clone, Debug, clap::ValueEnum)]
 pub enum ProviderChoice {
@@ -7,13 +7,13 @@ pub enum ProviderChoice {
 }
 
 pub async fn configure_provider(provider: ProviderChoice) {
-    use dialoguer::{Input, Confirm};
     use console::style;
-    
+    use dialoguer::{Confirm, Input};
+
     match provider {
         ProviderChoice::Opencode => {
             println!("{}", style("Configuring opencode provider").bold().green());
-            
+
             // Auto-detect opencode
             let opencode_path = which::which("opencode")
                 .ok()
@@ -22,13 +22,17 @@ pub async fn configure_provider(provider: ProviderChoice) {
                     println!("{} opencode not found in PATH", style("⚠").yellow());
                     None
                 });
-            
+
             let url = if let Some(path) = opencode_path {
                 // Test connection to default port
                 let test_url = "http://127.0.0.1:4096".to_string();
                 match test_opencode_connection(&test_url).await {
                     true => {
-                        println!("{} Found opencode running at {}", style("✓").green(), test_url);
+                        println!(
+                            "{} Found opencode running at {}",
+                            style("✓").green(),
+                            test_url
+                        );
                         test_url
                     }
                     false => {
@@ -37,7 +41,7 @@ pub async fn configure_provider(provider: ProviderChoice) {
                             .default(true)
                             .interact()
                             .unwrap();
-                        
+
                         if start {
                             match start_opencode(&path).await {
                                 Ok(url) => {
@@ -69,17 +73,17 @@ pub async fn configure_provider(provider: ProviderChoice) {
                     .interact()
                     .unwrap()
             };
-            
+
             let auto_start = Confirm::new()
                 .with_prompt("Auto-start opencode if not running?")
                 .default(true)
                 .interact()
                 .unwrap();
-            
+
             // Save configuration
             let mut config = Config::load(None).await.unwrap_or_default();
-            use crate::config::{ProviderConfig, ProviderSettings, OpencodeConfig};
-            
+            use crate::config::{OpencodeConfig, ProviderConfig, ProviderSettings};
+
             config.providers.insert(
                 "opencode".to_string(),
                 ProviderConfig {
@@ -91,7 +95,7 @@ pub async fn configure_provider(provider: ProviderChoice) {
                     }),
                 },
             );
-            
+
             if let Err(e) = config.save(None).await {
                 error!("Failed to save configuration: {}", e);
             } else {
@@ -112,15 +116,15 @@ async fn test_opencode_connection(url: &str) -> bool {
 async fn start_opencode(_path: &str) -> anyhow::Result<String> {
     // Start opencode in serve mode
     use std::process::Command;
-    
+
     let mut child = Command::new("opencode")
         .args(["serve"])
         .spawn()
         .map_err(|e| anyhow::anyhow!("Failed to start opencode: {}", e))?;
-    
+
     // Wait a bit for it to start
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-    
+
     // Verify it's running
     let url = "http://127.0.0.1:4096".to_string();
     if test_opencode_connection(&url).await {
@@ -135,17 +139,21 @@ async fn start_opencode(_path: &str) -> anyhow::Result<String> {
 
 pub async fn show_status() {
     use console::style;
-    
+
     println!("{}", style("loc-ai-proxy Status").bold().underlined());
-    
+
     let config = match Config::load(None).await {
         Ok(c) => c,
         Err(_) => {
-            println!("{}", style("No configuration found. Run 'locaiproxy configure opencode' first.").yellow());
+            println!(
+                "{}",
+                style("No configuration found. Run 'locaiproxy configure opencode' first.")
+                    .yellow()
+            );
             return;
         }
     };
-    
+
     for (name, provider) in &config.providers {
         let status = if provider.enabled {
             match name.as_str() {
@@ -182,10 +190,10 @@ pub async fn show_status() {
         } else {
             style("⊘ Disabled").dim()
         };
-        
+
         println!("  {}: {}", name, status);
     }
-    
+
     println!("\n{}", style("Server Configuration:").bold());
     println!("  Port: {}", config.server.port);
     println!("  Host: {}", config.server.host);
@@ -193,10 +201,10 @@ pub async fn show_status() {
 
 pub async fn list_models() {
     use console::style;
-    
+
     println!("{}", style("Available Models").bold().underlined());
     println!("\n{}", style("opencode models:").bold());
-    
+
     // Try to fetch from running proxy
     match reqwest::get("http://127.0.0.1:9110/v1/models").await {
         Ok(resp) => {
@@ -220,14 +228,17 @@ pub async fn list_models() {
 
 pub async fn run_diagnostics() {
     use console::style;
-    
+
     println!("{}", style("Running Diagnostics").bold().underlined());
-    
+
     let mut all_ok = true;
-    
+
     // Check 1: Rust version
     print!("  Rust version... ");
-    if let Ok(output) = std::process::Command::new("rustc").arg("--version").output() {
+    if let Ok(output) = std::process::Command::new("rustc")
+        .arg("--version")
+        .output()
+    {
         if output.status.success() {
             let version = String::from_utf8_lossy(&output.stdout);
             println!("{} {}", style("✓").green(), version.trim());
@@ -239,13 +250,13 @@ pub async fn run_diagnostics() {
         println!("{}", style("✗ Not found").red());
         all_ok = false;
     }
-    
+
     // Check 2: opencode installed
     print!("  opencode... ");
     match which::which("opencode") {
         Ok(path) => {
             println!("{} at {}", style("✓").green(), path.display());
-            
+
             // Check if running
             print!("  opencode running... ");
             if test_opencode_connection("http://127.0.0.1:4096").await {
@@ -259,17 +270,20 @@ pub async fn run_diagnostics() {
             all_ok = false;
         }
     }
-    
+
     // Check 3: Config exists
     print!("  Configuration... ");
     match Config::load(None).await {
         Ok(_) => println!("{}", style("✓ Found").green()),
         Err(_) => {
-            println!("{}", style("✗ Not found (run 'locaiproxy configure opencode')").red());
+            println!(
+                "{}",
+                style("✗ Not found (run 'locaiproxy configure opencode')").red()
+            );
             all_ok = false;
         }
     }
-    
+
     // Check 4: Port available
     print!("  Port 9110... ");
     match tokio::net::TcpListener::bind("127.0.0.1:9110").await {
@@ -277,13 +291,24 @@ pub async fn run_diagnostics() {
             println!("{}", style("✓ Available").green());
         }
         Err(_) => {
-            println!("{}", style("✗ In use (is locaiproxy already running?)").yellow());
+            println!(
+                "{}",
+                style("✗ In use (is locaiproxy already running?)").yellow()
+            );
         }
     }
-    
+
     if all_ok {
-        println!("\n{}", style("All checks passed! Ready to use.").bold().green());
+        println!(
+            "\n{}",
+            style("All checks passed! Ready to use.").bold().green()
+        );
     } else {
-        println!("\n{}", style("Some issues found. Please fix above.").bold().yellow());
+        println!(
+            "\n{}",
+            style("Some issues found. Please fix above.")
+                .bold()
+                .yellow()
+        );
     }
 }

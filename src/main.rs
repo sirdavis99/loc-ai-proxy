@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
-use tracing::{info, error};
 use std::process;
+use tracing::{error, info};
 
 mod api;
 mod cli;
@@ -21,19 +21,24 @@ use crate::server::Server;
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
-    
+
     /// Port to listen on
     #[arg(short, long, env = "LOC_AI_PROXY_PORT", default_value = "9110")]
     pub port: u16,
-    
+
     /// Host to bind to
-    #[arg(short = 'H', long, env = "LOC_AI_PROXY_HOST", default_value = "127.0.0.1")]
+    #[arg(
+        short = 'H',
+        long,
+        env = "LOC_AI_PROXY_HOST",
+        default_value = "127.0.0.1"
+    )]
     pub host: String,
-    
+
     /// Configuration file path
     #[arg(short, long, env = "LOC_AI_PROXY_CONFIG")]
     pub config: Option<String>,
-    
+
     /// Enable debug logging
     #[arg(short, long)]
     pub debug: bool,
@@ -58,15 +63,15 @@ pub enum Commands {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    
+
     // Initialize logging
     let log_level = if cli.debug { "debug" } else { "info" };
     tracing_subscriber::fmt()
         .with_env_filter(format!("loc_ai_proxy={}", log_level))
         .init();
-    
+
     info!("Starting loc-ai-proxy v{}", env!("CARGO_PKG_VERSION"));
-    
+
     match cli.command {
         Some(Commands::Configure { provider }) => {
             cli::configure_provider(provider).await;
@@ -96,14 +101,14 @@ async fn run_server(cli: Cli) {
             process::exit(1);
         }
     };
-    
+
     // Override with CLI args
     let port = cli.port;
     let host = cli.host;
-    
+
     info!("Configuration loaded successfully");
     info!("Binding to {}:{}", host, port);
-    
+
     // Create and start server
     let server = match Server::new(config, host, port).await {
         Ok(s) => s,
@@ -112,7 +117,7 @@ async fn run_server(cli: Cli) {
             process::exit(1);
         }
     };
-    
+
     if let Err(e) = server.run().await {
         error!("Server error: {}", e);
         process::exit(1);

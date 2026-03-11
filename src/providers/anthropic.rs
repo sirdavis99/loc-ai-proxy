@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, error, info};
 
-use crate::api::models::{ChatCompletionRequest, ChatCompletionResponse, Message, Choice, Usage};
+use crate::api::models::{ChatCompletionRequest, ChatCompletionResponse, Choice, Message, Usage};
 use crate::utils::errors::{ProxyError, Result};
 
 pub struct AnthropicProvider {
@@ -59,24 +59,24 @@ impl AnthropicProvider {
         if config.api_key.is_none() {
             config.api_key = Self::detect_api_key_from_env();
         }
-        
+
         let client = Client::builder()
             .timeout(Duration::from_secs(config.timeout_seconds))
             .build()
             .expect("Failed to build HTTP client");
-        
+
         Self {
             client,
             api_key: config.api_key.unwrap_or_default(),
             base_url: config.url,
         }
     }
-    
+
     /// Try to detect Anthropic API key from environment
     fn detect_api_key_from_env() -> Option<String> {
         std::env::var("ANTHROPIC_API_KEY").ok()
     }
-    
+
     /// Get API key or return error
     fn get_api_key(&self) -> Result<&str> {
         if self.api_key.is_empty() {
@@ -88,16 +88,20 @@ impl AnthropicProvider {
         }
         Ok(&self.api_key)
     }
-    
-    pub async fn chat_completion(&self, request: &ChatCompletionRequest) -> Result<ChatCompletionResponse> {
+
+    pub async fn chat_completion(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> Result<ChatCompletionResponse> {
         let api_key = self.get_api_key()?;
-        
+
         // Convert OpenAI format to Anthropic format
         let anthropic_request = self.convert_request(request)?;
-        
+
         debug!("Sending request to Anthropic API");
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{}/v1/messages", self.base_url))
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
@@ -105,8 +109,10 @@ impl AnthropicProvider {
             .json(&anthropic_request)
             .send()
             .await
-            .map_err(|e| ProxyError::ProviderError(format!("Failed to send request to Anthropic: {}", e)))?;
-        
+            .map_err(|e| {
+                ProxyError::ProviderError(format!("Failed to send request to Anthropic: {}", e))
+            })?;
+
         let status = response.status();
         if !status.is_success() {
             let error_text = response.text().await.unwrap_or_default();
@@ -115,22 +121,25 @@ impl AnthropicProvider {
                 status, error_text
             )));
         }
-        
-        let anthropic_response: AnthropicResponse = response
-            .json()
-            .await
-            .map_err(|e| ProxyError::ProviderError(format!("Failed to parse Anthropic response: {}", e)))?;
-        
+
+        let anthropic_response: AnthropicResponse = response.json().await.map_err(|e| {
+            ProxyError::ProviderError(format!("Failed to parse Anthropic response: {}", e))
+        })?;
+
         debug!("Received response from Anthropic API");
-        
+
         // Convert Anthropic response to OpenAI format
         Ok(self.convert_response(&anthropic_response, &request.model))
     }
-    
+
     fn convert_request(&self, request: &ChatCompletionRequest) -> Result<AnthropicRequest> {
         // Parse model ID - Anthropic models don't need the "anthropic/" prefix
         let model = if request.model.starts_with("anthropic/") {
-            request.model.strip_prefix("anthropic/").unwrap_or(&request.model).to_string()
+            request
+                .model
+                .strip_prefix("anthropic/")
+                .unwrap_or(&request.model)
+                .to_string()
         } else if request.model.starts_with("claude-") {
             request.model.clone()
         } else {
@@ -140,7 +149,7 @@ impl AnthropicProvider {
                 .unwrap_or(&request.model)
                 .to_string()
         };
-        
+
         // Convert messages - Anthropic uses "user" and "assistant" roles
         let messages: Vec<AnthropicMessage> = request
             .messages
@@ -150,15 +159,19 @@ impl AnthropicProvider {
                 content: msg.content.clone(),
             })
             .collect();
-        
+
         Ok(AnthropicRequest {
             model,
             max_tokens: 4096, // Default max tokens
             messages,
         })
     }
-    
-    fn convert_response(&self, response: &AnthropicResponse, original_model: &str) -> ChatCompletionResponse {
+
+    fn convert_response(
+        &self,
+        response: &AnthropicResponse,
+        original_model: &str,
+    ) -> ChatCompletionResponse {
         // Extract text content from response
         let content = response
             .content
@@ -167,7 +180,7 @@ impl AnthropicProvider {
             .map(|c| c.text.clone())
             .collect::<Vec<_>>()
             .join("");
-        
+
         let choice = Choice {
             index: 0,
             message: Message {
@@ -177,7 +190,7 @@ impl AnthropicProvider {
             },
             finish_reason: response.stop_reason.clone(),
         };
-        
+
         ChatCompletionResponse {
             id: response.id.clone(),
             object: "chat.completion".to_string(),
@@ -191,7 +204,7 @@ impl AnthropicProvider {
             },
         }
     }
-    
+
     pub async fn health_check(&self) -> Result<bool> {
         match self.get_api_key() {
             Ok(_) => Ok(true),
@@ -203,7 +216,7 @@ impl AnthropicProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_model_parsing() {
         let config = crate::config::AnthropicConfig {
@@ -211,9 +224,9 @@ mod tests {
             url: "https://api.anthropic.com".to_string(),
             timeout_seconds: 30,
         };
-        
+
         let provider = AnthropicProvider::new(config);
-        
+
         // Should accept claude-3.5-sonnet alias
         let request = ChatCompletionRequest {
             model: "claude-3.5-sonnet".to_string(),
@@ -224,7 +237,7 @@ mod tests {
             }],
             stream: None,
         };
-        
+
         let anthropic_req = provider.convert_request(&request).unwrap();
         assert!(anthropic_req.model.contains("claude"));
     }

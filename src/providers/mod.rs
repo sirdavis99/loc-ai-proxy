@@ -1,10 +1,10 @@
 use crate::api::models::{ChatCompletionRequest, ChatCompletionResponse, Model};
-use crate::utils::errors::Result;
-use crate::providers::opencode::OpencodeProvider;
 use crate::providers::anthropic::AnthropicProvider;
+use crate::providers::opencode::OpencodeProvider;
+use crate::utils::errors::Result;
 
-pub mod opencode;
 pub mod anthropic;
+pub mod opencode;
 
 pub struct ProviderRegistry {
     providers: Vec<Provider>,
@@ -64,7 +64,11 @@ impl Provider {
             Provider::Opencode(p) => p.create_session().await,
             Provider::Anthropic(_) => {
                 // Anthropic doesn't use sessions, return a placeholder
-                Ok(format!("anthropic-{}-{}-direct", std::process::id(), chrono::Utc::now().timestamp()))
+                Ok(format!(
+                    "anthropic-{}-{}-direct",
+                    std::process::id(),
+                    chrono::Utc::now().timestamp()
+                ))
             }
         }
     }
@@ -98,7 +102,7 @@ impl Provider {
                     Ok(())
                 } else {
                     Err(crate::utils::errors::ProxyError::ProviderError(
-                        "Anthropic API key not configured".to_string()
+                        "Anthropic API key not configured".to_string(),
                     ))
                 }
             }
@@ -112,11 +116,11 @@ impl ProviderRegistry {
             providers: Vec::new(),
         }
     }
-    
+
     pub fn register(&mut self, provider: Provider) {
         self.providers.push(provider);
     }
-    
+
     pub async fn get_provider(&self, name: &str) -> Option<&Provider> {
         for provider in &self.providers {
             if provider.name() == name {
@@ -125,10 +129,10 @@ impl ProviderRegistry {
         }
         None
     }
-    
+
     pub async fn list_all_models(&self) -> Result<Vec<Model>> {
         let mut all_models = Vec::new();
-        
+
         for provider in &self.providers {
             match provider.list_models().await {
                 Ok(models) => all_models.extend(models),
@@ -137,7 +141,7 @@ impl ProviderRegistry {
                 }
             }
         }
-        
+
         Ok(all_models)
     }
 }
