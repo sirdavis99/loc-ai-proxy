@@ -32,9 +32,13 @@ pub fn create_router(
 async fn chat_completions(
     Extension(session_manager): Extension<Arc<SessionManager>>,
     Extension(provider_registry): Extension<Arc<ProviderRegistry>>,
-    Json(request): Json<ChatCompletionRequest>,
+    Json(mut request): Json<ChatCompletionRequest>,
 ) -> Result<Json<ChatCompletionResponse>> {
     debug!("Received chat completion request for model: {}", request.model);
+    
+    // Resolve model alias before determining provider
+    request.model = crate::models::resolve_model_alias(&request.model);
+    debug!("Resolved model: {}", request.model);
     
     // Determine provider from model ID
     let provider_name = extract_provider_name(&request.model);

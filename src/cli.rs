@@ -152,11 +152,29 @@ pub async fn show_status() {
                 "opencode" => {
                     let cfg = match &provider.settings {
                         crate::config::ProviderSettings::Opencode(c) => c,
+                        _ => {
+                            println!("  {}: {}", name, style("✗ Invalid config").red());
+                            continue;
+                        }
                     };
                     if test_opencode_connection(&cfg.url).await {
                         style("✓ Connected").green()
                     } else {
                         style("✗ Not connected").red()
+                    }
+                }
+                "anthropic" => {
+                    let cfg = match &provider.settings {
+                        crate::config::ProviderSettings::Anthropic(c) => c,
+                        _ => {
+                            println!("  {}: {}", name, style("✗ Invalid config").red());
+                            continue;
+                        }
+                    };
+                    if cfg.api_key.is_some() {
+                        style("✓ Configured").green()
+                    } else {
+                        style("✗ API key not set").red()
                     }
                 }
                 _ => style("? Unknown").yellow(),

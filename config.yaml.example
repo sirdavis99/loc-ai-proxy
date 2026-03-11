@@ -1,0 +1,53 @@
+# loc-ai-proxy Configuration
+
+This configuration enables both opencode and direct Anthropic API providers.
+
+## Setup Instructions
+
+### 1. Get Anthropic API Key
+- Visit: https://console.anthropic.com/settings/keys
+- Create a new API key
+- Copy the key (starts with "sk-ant-")
+
+### 2. Configure the Proxy
+
+Edit this file and add your API key:
+
+```yaml
+providers:
+  anthropic:
+    enabled: true
+    type: anthropic
+    api_key: "sk-ant-your-api-key-here"  # <-- Add your key here
+```
+
+Or set the environment variable:
+```bash
+export ANTHROPIC_API_KEY="sk-ant-your-api-key-here"
+```
+
+### 3. Run the Proxy
+
+```bash
+./target/debug/locaiproxy -c config.yaml
+```
+
+## Available Models
+
+When using the Anthropic provider, you can use these model aliases:
+- `claude-3-opus` → Claude 3 Opus
+- `claude-3-5-sonnet` → Claude 3.5 Sonnet  
+- `claude-3-5-haiku` → Claude 3.5 Haiku
+
+Or use the full model IDs:
+- `anthropic/claude-3-opus-20240229`
+- `anthropic/claude-3-5-sonnet-20241022`
+- `anthropic/claude-3-5-haiku-20241022`
+
+## Current Configuration
+
+providers:
+  anthropic:
+    enabled: true
+    type: anthropic
+    # api_key: set via ANTHROPIC_API_KEY env var or add above

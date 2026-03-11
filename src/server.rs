@@ -5,7 +5,7 @@ use tracing::{info, error};
 
 use crate::config::{Config, ProviderSettings};
 use crate::api::create_router;
-use crate::providers::{ProviderRegistry, Provider, opencode::OpencodeProvider};
+use crate::providers::{ProviderRegistry, Provider, opencode::OpencodeProvider, anthropic::AnthropicProvider};
 use crate::session::SessionManager;
 use crate::utils::errors::ProxyError;
 
@@ -20,7 +20,7 @@ impl Server {
     pub async fn new(config: Config, host: String, port: u16) -> anyhow::Result<Self> {
         // Initialize providers
         let mut provider_registry = ProviderRegistry::new();
-        
+
         // Register opencode if configured
         if let Some(opencode_config) = config.providers.get("opencode") {
             if opencode_config.enabled {
@@ -28,6 +28,17 @@ impl Server {
                     info!("Registering opencode provider");
                     let provider = OpencodeProvider::new(settings.clone());
                     provider_registry.register(Provider::Opencode(provider));
+                }
+            }
+        }
+
+        // Register anthropic if configured
+        if let Some(anthropic_config) = config.providers.get("anthropic") {
+            if anthropic_config.enabled {
+                if let ProviderSettings::Anthropic(settings) = &anthropic_config.settings {
+                    info!("Registering anthropic provider");
+                    let provider = AnthropicProvider::new(settings.clone());
+                    provider_registry.register(Provider::Anthropic(provider));
                 }
             }
         }

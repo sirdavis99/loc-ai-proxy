@@ -46,6 +46,8 @@ pub struct ProviderConfig {
 pub enum ProviderSettings {
     #[serde(rename = "opencode")]
     Opencode(OpencodeConfig),
+    #[serde(rename = "anthropic")]
+    Anthropic(AnthropicConfig),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +72,33 @@ pub struct OpencodeAuth {
     pub username: String,
     /// Password/token for HTTP Basic Auth
     pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnthropicConfig {
+    /// Anthropic API key
+    /// If not provided, will try to auto-detect from ANTHROPIC_API_KEY env var
+    pub api_key: Option<String>,
+    /// Base URL for Anthropic API (optional, defaults to official endpoint)
+    #[serde(default = "default_anthropic_url")]
+    pub url: String,
+    /// Request timeout in seconds
+    #[serde(default = "default_timeout")]
+    pub timeout_seconds: u64,
+}
+
+impl Default for AnthropicConfig {
+    fn default() -> Self {
+        Self {
+            api_key: None,
+            url: default_anthropic_url(),
+            timeout_seconds: default_timeout(),
+        }
+    }
+}
+
+fn default_anthropic_url() -> String {
+    "https://api.anthropic.com".to_string()
 }
 
 impl Default for OpencodeConfig {

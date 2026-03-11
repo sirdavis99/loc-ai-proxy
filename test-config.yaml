@@ -1,0 +1,12 @@
+providers:
+  opencode:
+    enabled: true
+    type: opencode
+    url: http://127.0.0.1:59775
+    auth:
+      username: opencode
+      password: f84b8b75-2b6c-40ee-b827-f4c5c3e96987
+  anthropic:
+    enabled: true
+    type: anthropic
+    # api_key: set via ANTHROPIC_API_KEY environment variable
