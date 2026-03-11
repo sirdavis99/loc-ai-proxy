@@ -21,7 +21,32 @@ opencode provides access to 300+ models from 11+ providers through a single inte
 ### Prerequisites
 
 1. opencode installed: [Installation Guide](https://opencode.ai/docs/installation)
-2. opencode authenticated (providers configured)
+2. opencode server running: `opencode serve`
+3. **Authentication configured** (see [OpenCode Authentication](./OPENCODE_AUTH.md))
+
+### Quick Start
+
+The proxy will **auto-detect** authentication if you start it from the same shell where opencode is running:
+
+```bash
+# Terminal 1: Start opencode
+opencode serve &
+
+# Terminal 2: Start proxy (auto-detects auth from environment)
+locaiproxy
+
+# Or configure explicitly
+locaiproxy configure opencode
+```
+
+### Authentication
+
+OpenCode server requires HTTP Basic Authentication. The proxy supports:
+
+- **Auto-detection** from `OPENCODE_SERVER_USERNAME` and `OPENCODE_SERVER_PASSWORD` environment variables
+- **Manual configuration** in config file
+
+See the complete [OpenCode Authentication Guide](./OPENCODE_AUTH.md) for details.
 
 ### Configuration
 
