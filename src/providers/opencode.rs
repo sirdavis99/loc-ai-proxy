@@ -58,13 +58,48 @@ enum OpencodeResponsePart {
 }
 
 impl OpencodeProvider {
-    pub fn new(config: crate::config::OpencodeConfig) -> Self {
+    pub fn new(mut config: crate::config::OpencodeConfig) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(config.timeout_seconds))
             .build()
             .expect("Failed to build HTTP client");
         
+        // Try to auto-detect auth if not configured
+        if config.auth.is_none() {
+            config.auth = Self::detect_auth_from_env();
+        }
+        
         Self { client, config }
+    }
+    
+    /// Try to detect opencode authentication from environment
+    fn detect_auth_from_env() -> Option<crate::config::OpencodeAuth> {
+        use std::env;
+        
+        let username = env::var("OPENCODE_SERVER_USERNAME").ok()?;
+        let password = env::var("OPENCODE_SERVER_PASSWORD").ok()?;
+        
+        Some(crate::config::OpencodeAuth { username, password })
+    }
+    
+    /// Get authentication credentials or return error
+    fn get_auth(&self) -> Result<&crate::config::OpencodeAuth> {
+        self.config.auth.as_ref().ok_or_else(|| {
+            ProxyError::ProviderError(
+                "Authentication not configured. \
+                Set OPENCODE_SERVER_USERNAME and OPENCODE_SERVER_PASSWORD environment variables, \
+                or configure auth in the config file. \
+                You can also use CLI mode which handles auth automatically.".to_string()
+            )
+        })
+    }
+    
+    /// Create authenticated request builder
+    fn auth_request(&self, method: reqwest::Method, url: String) -> Result<reqwest::RequestBuilder> {
+        let auth = self.get_auth()?;
+        Ok(self.client
+            .request(method, url)
+            .basic_auth(&auth.username, Some(&auth.password)))
     }
     
     pub async fn is_available(&self) -> bool {
@@ -133,16 +168,21 @@ impl OpencodeProvider {
             title: "loc-ai-proxy session".to_string(),
         };
         
-        let response = self.client
-            .post(&url)
+        let response = self.auth_request(reqwest::Method::POST, url)?
             .json(&request)
             .send()
             .await
             .map_err(|e| ProxyError::ProviderError(format!("Failed to create session: {}", e)))?;
         
         if !response.status().is_success() {
+            let status = response.status();
+            if status == reqwest::StatusCode::UNAUTHORIZED {
+                return Err(ProxyError::ProviderError(
+                    "Authentication failed. Please check your OPENCODE_SERVER_USERNAME and OPENCODE_SERVER_PASSWORD.".to_string()
+                ));
+            }
             let text = response.text().await.unwrap_or_default();
-            return Err(ProxyError::ProviderError(format!("Failed to create session: {}", text)));
+            return Err(ProxyError::ProviderError(format!("Failed to create session: HTTP {} - {}", status, text)));
         }
         
         let session: OpencodeSessionResponse = response
@@ -246,16 +286,30 @@ impl OpencodeProvider {
     pub async fn health_check(&self) -> Result<()> {
         let url = format!("{}/global/health", self.config.url);
         
-        let response = self.client
-            .get(&url)
-            .send()
-            .await
+        // If auth is configured, use it; otherwise try without auth (for older opencode versions)
+        let response = if let Some(auth) = &self.config.auth {
+            self.client
+                .get(&url)
+                .basic_auth(&auth.username, Some(&auth.password))
+                .send()
+                .await
+        } else {
+            self.client.get(&url).send().await
+        };
+        
+        let response = response
             .map_err(|e| ProxyError::ProviderUnavailable(format!("Health check failed: {}", e)))?;
         
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(ProxyError::ProviderUnavailable(format!("Health check returned: {}", response.status())))
+        match response.status() {
+            status if status.is_success() => Ok(()),
+            reqwest::StatusCode::UNAUTHORIZED => {
+                Err(ProxyError::ProviderError(
+                    "Authentication failed. Please set OPENCODE_SERVER_USERNAME and OPENCODE_SERVER_PASSWORD environment variables.".to_string()
+                ))
+            }
+            _ => Err(ProxyError::ProviderUnavailable(format!(
+                "Health check returned: {}", response.status()
+            )))
         }
     }
     

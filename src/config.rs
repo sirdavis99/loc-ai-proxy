@@ -36,13 +36,24 @@ pub enum ProviderSettings {
 pub struct OpencodeConfig {
     pub url: String,
     #[serde(default)]
-    pub auto_start: bool,
+pub auto_start: bool,
     #[serde(default = "default_timeout")]
     pub timeout_seconds: u64,
     #[serde(default = "default_health_interval")]
     pub health_check_interval_seconds: u64,
     #[serde(default = "default_session_ttl")]
     pub session_ttl_minutes: i64,
+    /// Authentication for opencode server
+    /// If not provided, will try to auto-detect from environment
+    pub auth: Option<OpencodeAuth>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpencodeAuth {
+    /// Username for HTTP Basic Auth (usually "opencode")
+    pub username: String,
+    /// Password/token for HTTP Basic Auth
+    pub password: String,
 }
 
 impl Default for OpencodeConfig {
@@ -53,6 +64,7 @@ impl Default for OpencodeConfig {
             timeout_seconds: default_timeout(),
             health_check_interval_seconds: default_health_interval(),
             session_ttl_minutes: default_session_ttl(),
+            auth: None,
         }
     }
 }
@@ -144,11 +156,42 @@ impl Config {
             .await
             .with_context(|| format!("Failed to read config file: {}", path))?;
         
-        let config: Config = serde_yaml::from_str(&content)
+        let mut config: Config = serde_yaml::from_str(&content)
             .with_context(|| format!("Failed to parse config file: {}", path))?;
+        
+        // Auto-detect opencode auth if not configured
+        config.auto_detect_auth();
         
         info!("Loaded configuration from: {}", path);
         Ok(config)
+    }
+    
+    /// Auto-detect authentication for providers
+    fn auto_detect_auth(&mut self) {
+        if let Some(provider_config) = self.providers.get_mut("opencode") {
+            if let ProviderSettings::Opencode(ref mut opencode_config) = provider_config.settings {
+                if opencode_config.auth.is_none() {
+                    if let Some(auth) = Self::detect_opencode_auth() {
+                        info!("Auto-detected opencode authentication");
+                        opencode_config.auth = Some(auth);
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Try to detect opencode authentication from environment
+    fn detect_opencode_auth() -> Option<OpencodeAuth> {
+        use std::env;
+        
+        // Check environment variables
+        let username = env::var("OPENCODE_SERVER_USERNAME").ok()?;
+        let password = env::var("OPENCODE_SERVER_PASSWORD").ok()?;
+        
+        Some(OpencodeAuth {
+            username,
+            password,
+        })
     }
     
     pub async fn save(&self, path: Option<&str>) -> Result<()> {
