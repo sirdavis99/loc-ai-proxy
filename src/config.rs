@@ -6,16 +6,32 @@ use tracing::{info, debug};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(default)]
     pub server: ServerConfig,
+    #[serde(default)]
     pub providers: HashMap<String, ProviderConfig>,
+    #[serde(default)]
     pub logging: LoggingConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
+    #[serde(default = "default_port")]
     pub port: u16,
+    #[serde(default = "default_host")]
     pub host: String,
+    #[serde(default = "default_request_timeout")]
     pub request_timeout_seconds: u64,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            port: default_port(),
+            host: default_host(),
+            request_timeout_seconds: default_request_timeout(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,7 +85,7 @@ impl Default for OpencodeConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
     pub level: String,
@@ -122,6 +138,18 @@ fn default_session_ttl() -> i64 {
 
 fn default_log_level() -> String {
     "info".to_string()
+}
+
+fn default_port() -> u16 {
+    9110
+}
+
+fn default_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_request_timeout() -> u64 {
+    120
 }
 
 impl Config {

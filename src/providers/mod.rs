@@ -39,11 +39,11 @@ impl Provider {
     
     pub async fn chat_completion(
         &self,
-        session_id: &str,
+        _session_id: &str,
         request: &ChatCompletionRequest,
     ) -> Result<ChatCompletionResponse> {
         match self {
-            Provider::Opencode(p) => p.chat_completion(session_id, request).await,
+            Provider::Opencode(p) => p.chat_completion(_session_id, request).await,
         }
     }
     
